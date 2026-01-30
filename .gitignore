@@ -1,0 +1,59 @@
+# Virtual Environment
+qwen_tts_venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.backup
+.env.example
+.env.staging
+.env.development
+.env.test
+.env.secret
+.env.private
+
+# Sensitive files
+*.key
+*.pem
+*.crt
+*.cert
+*.secret
+*.config
+secrets.json
+credentials.json
+config.json
+private.key
+private.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Modal
+.modal/
+__pycache__/
+
+# OS
+.DS_Store
+Thumbs.db
