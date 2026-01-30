@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen TTS - Text to Speech</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #1a1a2e; min-height: 100vh; }
+  .container { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  .subtitle { color: #666; margin-bottom: 24px; font-size: 0.95rem; }
+  label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.9rem; }
+  input, textarea, select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.95rem; font-family: inherit; background: #fff; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+  textarea { resize: vertical; min-height: 100px; }
+  .field { margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; }
+  .row > .field { flex: 1; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+  .tab { padding: 10px 20px; border: none; background: #e5e7eb; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: #555; transition: all .15s; }
+  .tab.active { background: #6366f1; color: #fff; }
+  .tab:hover:not(.active) { background: #d1d5db; }
+  .mode-panel { display: none; }
+  .mode-panel.active { display: block; }
+  .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 20px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 32px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; }
+  .spinner { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result { margin-top: 20px; }
+  .result audio { width: 100%; margin-top: 8px; }
+  .error { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; padding: 12px 16px; border-radius: 8px; margin-top: 16px; }
+  .success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; padding: 12px 16px; border-radius: 8px; margin-top: 16px; }
+  .help { font-size: 0.8rem; color: #888; margin-top: 2px; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; }
+  .toggle { position: relative; width: 44px; height: 24px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .slider { position: absolute; inset: 0; background: #d1d5db; border-radius: 12px; cursor: pointer; transition: .2s; }
+  .toggle .slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .toggle input:checked + .slider { background: #6366f1; }
+  .toggle input:checked + .slider::before { transform: translateX(20px); }
+  .api-bar { background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 20px; }
+  .api-bar .field { margin-bottom: 12px; }
+  .api-bar .field:last-child { margin-bottom: 0; }
+  .api-bar .btn { padding: 10px 20px; white-space: nowrap; }
+  .auto-fill-row { display: flex; gap: 12px; align-items: end; margin-bottom: 12px; }
+  .auto-fill-row .field { flex: 1; margin-bottom: 0; }
+  .voices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 8px; }
+  .voice-chip { padding: 6px 10px; background: #f3f4f6; border-radius: 6px; font-size: 0.82rem; }
+  .voice-chip strong { color: #6366f1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Qwen Text-to-Speech</h1>
+  <p class="subtitle">Generate natural speech from text using AI</p>
+
+  <div class="api-bar">
+    <p style="font-weight:600;margin-bottom:12px;font-size:.95rem;">API Endpoint URLs</p>
+    <p class="help" style="margin-bottom:12px;">Modal gives each endpoint its own URL. Paste any one and click "Auto-fill" to detect the others, or fill them in manually.</p>
+    <div class="auto-fill-row">
+      <div class="field">
+        <label for="urlGenerate">Generate Speech URL</label>
+        <input type="url" id="urlGenerate" placeholder="https://your-workspace--qwen3-tts-api-api-generate-speech.modal.run">
+      </div>
+      <button class="btn btn-primary" onclick="autoFillUrls()" style="font-size:.85rem;padding:10px 16px;">Auto-fill</button>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="urlListVoices">List Voices URL</label>
+        <input type="url" id="urlListVoices" placeholder="https://your-workspace--qwen3-tts-api-list-voices.modal.run">
+      </div>
+      <div class="field">
+        <label for="urlHealth">Health Check URL (optional)</label>
+        <input type="url" id="urlHealth" placeholder="https://your-workspace--qwen3-tts-api-health.modal.run">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="loadVoices()" style="font-size:.85rem;padding:10px 16px;margin-top:8px;">Load Voices</button>
+  </div>
+
+  <!-- Text input -->
+  <div class="card">
+    <div class="field">
+      <label for="text">Text to speak</label>
+      <textarea id="text" placeholder="Enter the text you want to convert to speech...">Hello! Welcome to the Qwen text to speech demo. This tool lets you generate natural sounding speech from any text.</textarea>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="language">Language</label>
+        <select id="language">
+          <option value="Auto">Auto Detect</option>
+          <option value="Chinese">Chinese</option>
+          <option value="English" selected>English</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Korean">Korean</option>
+          <option value="German">German</option>
+          <option value="French">French</option>
+          <option value="Russian">Russian</option>
+          <option value="Portuguese">Portuguese</option>
+          <option value="Spanish">Spanish</option>
+          <option value="Italian">Italian</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="format">Output Format</label>
+        <select id="format">
+          <option value="mp3">MP3</option>
+          <option value="wav">WAV</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="modelSize">Model</label>
+        <select id="modelSize">
+          <option value="1.7B">1.7B (Better quality)</option>
+          <option value="0.6B">0.6B (Faster)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchMode('custom_voice')">Custom Voice</button>
+    <button class="tab" onclick="switchMode('voice_design')">Voice Design</button>
+    <button class="tab" onclick="switchMode('voice_clone')">Voice Clone</button>
+  </div>
+
+  <!-- Custom Voice panel -->
+  <div id="panel-custom_voice" class="mode-panel active card">
+    <div class="row">
+      <div class="field">
+        <label for="speaker">Speaker</label>
+        <select id="speaker">
+          <option value="Vivian">Vivian</option>
+          <option value="Serena">Serena</option>
+          <option value="Uncle_Fu">Uncle Fu</option>
+          <option value="Dylan">Dylan</option>
+          <option value="Eric">Eric</option>
+          <option value="Ryan">Ryan</option>
+          <option value="Aiden">Aiden</option>
+          <option value="Ono_Anna">Ono Anna</option>
+          <option value="Sohee">Sohee</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="instruct">Emotion / Style (optional)</label>
+        <input type="text" id="instruct" placeholder="e.g. Very happy and excited">
+      </div>
+    </div>
+    <div id="voiceDetails"></div>
+  </div>
+
+  <!-- Voice Design panel -->
+  <div id="panel-voice_design" class="mode-panel card">
+    <div class="field">
+      <label for="voiceDesc">Describe the voice you want</label>
+      <textarea id="voiceDesc" style="min-height:70px" placeholder="e.g. A warm, deep male voice with a calm and reassuring tone"></textarea>
+    </div>
+  </div>
+
+  <!-- Voice Clone panel -->
+  <div id="panel-voice_clone" class="mode-panel card">
+    <div class="field">
+      <label for="refAudioUrl">Reference Audio URL</label>
+      <input type="url" id="refAudioUrl" placeholder="https://example.com/voice-sample.wav">
+      <p class="help">A publicly accessible URL to an audio clip of the voice to clone</p>
+    </div>
+    <div class="field">
+      <label for="refText">Reference Text (optional)</label>
+      <input type="text" id="refText" placeholder="Transcript of the reference audio for better quality">
+    </div>
+    <div class="field">
+      <label for="cloneInstruct">Emotion / Style (optional)</label>
+      <input type="text" id="cloneInstruct" placeholder="e.g. Speak in a calm, soothing tone">
+    </div>
+    <div class="toggle-row" style="margin-top:8px;">
+      <label class="toggle"><input type="checkbox" id="xVectorOnly"><span class="slider"></span></label>
+      <span style="font-size:.9rem;">X-Vector only (no transcript needed, lower quality)</span>
+    </div>
+  </div>
+
+  <!-- Generate -->
+  <button class="btn btn-primary" id="generateBtn" onclick="generate()" style="width:100%;justify-content:center;margin-top:4px;">
+    Generate Speech
+  </button>
+
+  <div id="output"></div>
+</div>
+
+<script>
+  let currentMode = 'custom_voice';
+  let voicesData = {};
+
+  function switchMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.mode-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector(`[onclick="switchMode('${mode}')"]`).classList.add('active');
+    document.getElementById('panel-' + mode).classList.add('active');
+  }
+
+  // Modal endpoint URLs follow the pattern: https://WORKSPACE--APP-NAME-FUNCTION-NAME.modal.run
+  // Given any one URL, we can derive the others by replacing the function name suffix.
+  function autoFillUrls() {
+    const input = document.getElementById('urlGenerate').value.trim().replace(/\/+$/, '');
+    if (!input) { showError('Paste any one of your Modal endpoint URLs first.'); return; }
+
+    // Extract the base pattern: everything before the last function-name segment
+    // Modal URL format: https://workspace--app-name-function-name.modal.run
+    // Function names in the API: api-generate-speech, list-voices, health
+    const knownSuffixes = ['api-generate-speech', 'list-voices', 'health'];
+    let basePrefix = '';
+
+    for (const suffix of knownSuffixes) {
+      const idx = input.indexOf(suffix);
+      if (idx !== -1) {
+        basePrefix = input.substring(0, idx);
+        break;
+      }
+    }
+
+    if (!basePrefix) {
+      // Try generic approach: split on .modal.run and work backwards
+      // The user may have pasted the full URL; try to find the pattern
+      showError('Could not detect Modal URL pattern. Please fill in all three URLs manually.');
+      return;
+    }
+
+    const dotSuffix = input.substring(input.indexOf('.modal.run'));
+    document.getElementById('urlGenerate').value = basePrefix + 'api-generate-speech' + dotSuffix;
+    document.getElementById('urlListVoices').value = basePrefix + 'list-voices' + dotSuffix;
+    document.getElementById('urlHealth').value = basePrefix + 'health' + dotSuffix;
+
+    document.getElementById('output').innerHTML = '<div class="success">URLs auto-filled! Click "Load Voices" to verify.</div>';
+  }
+
+  function getUrl(id) {
+    return document.getElementById(id).value.trim().replace(/\/+$/, '');
+  }
+
+  async function loadVoices() {
+    const url = getUrl('urlListVoices');
+    if (!url) { showError('Please enter the List Voices URL (or use Auto-fill).'); return; }
+    try {
+      const r = await fetch(url);
+      const data = await r.json();
+      voicesData = data.voices || {};
+      let html = '<div class="voices-grid">';
+      for (const [name, info] of Object.entries(voicesData)) {
+        html += `<div class="voice-chip"><strong>${name}</strong><br>${info.description || ''}</div>`;
+      }
+      html += '</div>';
+      document.getElementById('voiceDetails').innerHTML = html;
+      document.getElementById('output').innerHTML = '<div class="success">Voices loaded successfully!</div>';
+    } catch (e) {
+      showError('Could not load voices. Check your List Voices URL and make sure the server is running.');
+    }
+  }
+
+  function showError(msg) {
+    document.getElementById('output').innerHTML = `<div class="error">${msg}</div>`;
+  }
+
+  async function generate() {
+    const generateUrl = getUrl('urlGenerate');
+    if (!generateUrl) { showError('Please enter the Generate Speech URL (or use Auto-fill).'); return; }
+    const text = document.getElementById('text').value.trim();
+    if (!text) { showError('Please enter some text.'); return; }
+
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = true;
+    const isClone = currentMode === 'voice_clone';
+    btn.innerHTML = '<div class="spinner"></div> Generating...';
+    document.getElementById('output').innerHTML = isClone
+      ? '<div class="success" style="background:#eff6ff;border-color:#93c5fd;color:#1e40af;">Voice cloning can take several minutes. Please wait and do not close this tab.</div>'
+      : '';
+
+    const body = {
+      text: text,
+      mode: currentMode,
+      language: document.getElementById('language').value,
+      output_format: document.getElementById('format').value,
+      model_size: document.getElementById('modelSize').value,
+      upload_to_r2: true,
+    };
+
+    if (currentMode === 'custom_voice') {
+      body.speaker = document.getElementById('speaker').value;
+      const instruct = document.getElementById('instruct').value.trim();
+      if (instruct) body.instruct = instruct;
+    } else if (currentMode === 'voice_design') {
+      body.voice_description = document.getElementById('voiceDesc').value.trim();
+      if (!body.voice_description) { showError('Please describe the voice you want.'); reset(); return; }
+    } else if (currentMode === 'voice_clone') {
+      body.reference_audio_url = document.getElementById('refAudioUrl').value.trim();
+      if (!body.reference_audio_url) { showError('Please provide a reference audio URL.'); reset(); return; }
+      const refText = document.getElementById('refText').value.trim();
+      if (refText) body.reference_text = refText;
+      body.x_vector_only = document.getElementById('xVectorOnly').checked;
+      const cloneInstruct = document.getElementById('cloneInstruct').value.trim();
+      if (cloneInstruct) body.instruct = cloneInstruct;
+    }
+
+    try {
+      // Use a 10-minute timeout — voice cloning can take several minutes
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+
+      const r = await fetch(generateUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await r.json();
+      if (data.status === 'success') {
+        let audioSrc = data.audio_url || '';
+        if (!audioSrc && data.audio_base64) {
+          const mime = body.output_format === 'wav' ? 'audio/wav' : 'audio/mpeg';
+          audioSrc = `data:${mime};base64,${data.audio_base64}`;
+        }
+        document.getElementById('output').innerHTML = `
+          <div class="success">
+            Speech generated successfully!
+            ${data.audio_url ? `<br><a href="${data.audio_url}" target="_blank" style="color:#166534;">Download audio</a>` : ''}
+          </div>
+          <div class="result"><audio controls autoplay src="${audioSrc}"></audio></div>`;
+      } else {
+        showError(data.error || data.detail || 'Generation failed. Please try again.');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        showError('Request timed out after 10 minutes. Check your Modal dashboard — the audio may still have been generated and uploaded to R2.');
+      } else {
+        showError('Request failed: ' + e.message + '<br><br>If voice cloning, this may be a CORS or timeout issue. Check your Modal dashboard to see if the generation actually completed.');
+      }
+    }
+    reset();
+  }
+
+  function reset() {
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = false;
+    btn.innerHTML = 'Generate Speech';
+  }
+</script>
+</body>
+</html>

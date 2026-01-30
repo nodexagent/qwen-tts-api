@@ -12,7 +12,7 @@ image = (
     modal.Image.debian_slim()
     .apt_install(
         "git", "ffmpeg", "wget", "libsndfile1",
-        "pkg-config", "libsox-dev"
+        "pkg-config", "libsox-dev", "sox"
     )
     .run_commands(
         "pip install --upgrade pip wheel setuptools",
@@ -302,7 +302,7 @@ def generate_speech(request_data: dict):
         }
 
 
-@app.function()
+@app.function(timeout=600)
 @modal.web_endpoint(method="POST")
 async def api_generate_speech(request: TTSRequest):
     """
