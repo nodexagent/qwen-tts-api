@@ -364,6 +364,58 @@ def list_voices():
     return {"voices": voices, "total": len(voices)}
 
 
+@app.function(
+    image=image,
+    gpu="L40S",
+    timeout=3600,               # 1 hour — enough to download all models
+    volumes={MODEL_CACHE_DIR: model_volume},
+)
+def download_models():
+    """
+    Pre-download all TTS models into the Modal Volume before deploying.
+
+    Run once with:
+        modal run qwen3_tts_api.py::download_models
+
+    After this completes, every container start loads from the volume
+    (seconds) instead of re-downloading from HuggingFace (5-10 min).
+    """
+    import torch
+    from qwen_tts import Qwen3TTSModel
+
+    os.environ["HF_HOME"] = MODEL_CACHE_DIR
+    os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE_DIR
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+
+    all_models = [
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+    ]
+
+    for model_name in all_models:
+        print(f"Downloading {model_name} ...")
+        try:
+            model = Qwen3TTSModel.from_pretrained(
+                model_name,
+                device_map=device,
+                dtype=dtype,
+                cache_dir=MODEL_CACHE_DIR,
+            )
+            del model        # free GPU memory before next download
+            print(f"  ✓ {model_name}")
+        except Exception as e:
+            print(f"  ✗ {model_name} failed: {e}")
+
+    # Commit so the files are visible to future containers
+    model_volume.commit()
+    print("All models saved to volume. You can now deploy.")
+
+
 @app.local_entrypoint()
 def test_locally():
     """Test the TTS API locally"""
