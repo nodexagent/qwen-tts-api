@@ -390,13 +390,12 @@ def download_models():
     os.environ["HF_HOME"] = MODEL_CACHE_DIR
     os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE_DIR
 
-    # Only download the two models the court pipeline actually uses:
-    #   voice_clone mode  → 1.7B-Base
-    #   custom_voice mode → 1.7B-CustomVoice  (speaker "Ryan" etc.)
-    # VoiceDesign and 0.6B variants are never called by voiceover_generator.py
     all_models = [
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
     ]
 
     for model_name in all_models:
