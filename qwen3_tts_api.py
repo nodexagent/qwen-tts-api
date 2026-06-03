@@ -24,6 +24,18 @@ image = (
 
 app = modal.App("qwen3-tts-api", image=image)
 
+# Persistent volume — models are downloaded here once and reused across all
+# container restarts.  Without this, every cold start re-downloads 2-5 GB
+# from HuggingFace which takes 5-10 minutes and eats the method timeout.
+model_volume = modal.Volume.from_name("qwen-tts-models", create_if_missing=True)
+MODEL_CACHE_DIR = "/models"
+
+# The two models we pre-load at container startup so the first request is fast.
+PRELOAD_MODELS = [
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+]
+
 
 class TTSRequest(BaseModel):
     text: str
@@ -55,19 +67,33 @@ class TTSRequest(BaseModel):
 
 @app.cls(
     gpu="L40S",
-    timeout=600,
+    timeout=900,                # 15 min — covers model load (5-10 min) + inference
     secrets=[modal.Secret.from_name("r2-credentials-tts")],
-    min_containers=0,      # Scale to zero when idle
-    scaledown_window=60,   # Sleep after 60s of no requests
-    max_containers=5,      # Handle 5 concurrent jobs
+    min_containers=0,           # Scale to zero when idle
+    scaledown_window=60,        # Sleep after 60s of no requests
+    max_containers=5,           # Handle 5 concurrent jobs
+    volumes={MODEL_CACHE_DIR: model_volume},
 )
 class TTSService:
 
     @modal.enter()
     def setup(self):
-        """Runs once when the container starts — patches and prepares device."""
+        """
+        Runs once when the container starts.
+
+        Key change: pre-loads the two most-used models here so the first
+        request only does inference (fast) instead of model loading (slow).
+
+        HF_HOME is pointed at the Modal Volume so downloaded model weights
+        persist across container restarts — no re-downloading on cold start.
+        """
         import torch
         import torchaudio
+
+        # Point HuggingFace cache at the persistent volume
+        os.environ["HF_HOME"] = MODEL_CACHE_DIR
+        os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE_DIR
+        os.environ["HF_DATASETS_CACHE"] = MODEL_CACHE_DIR
 
         # Patch torchaudio backend (compatibility for older versions)
         if not hasattr(torchaudio, 'set_audio_backend'):
@@ -87,21 +113,31 @@ class TTSService:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
-        self._models = {}  # model_name -> loaded model (cached per container)
+        self._models = {}
 
         print(f"Container ready. Device: {self.device}, dtype: {self.dtype}")
+        print(f"Model cache dir: {MODEL_CACHE_DIR}")
+
+        # Pre-load models so the first request doesn't time out waiting
+        for model_name in PRELOAD_MODELS:
+            try:
+                self._get_model(model_name)
+                print(f"Pre-loaded: {model_name}")
+            except Exception as e:
+                print(f"WARNING: failed to pre-load {model_name}: {e}")
 
     def _get_model(self, model_name: str):
         """Load model on first use, then return cached version."""
         if model_name not in self._models:
             from qwen_tts import Qwen3TTSModel
-            print(f"Loading model for first time: {model_name}")
+            print(f"Loading model: {model_name}")
             try:
                 model = Qwen3TTSModel.from_pretrained(
                     model_name,
                     device_map=self.device,
                     dtype=self.dtype,
                     attn_implementation="flash_attention_2",
+                    cache_dir=MODEL_CACHE_DIR,
                 )
             except Exception as e:
                 print(f"FlashAttention failed, loading without it: {e}")
@@ -109,9 +145,10 @@ class TTSService:
                     model_name,
                     device_map=self.device,
                     dtype=self.dtype,
+                    cache_dir=MODEL_CACHE_DIR,
                 )
             self._models[model_name] = model
-            print(f"Model cached: {model_name}")
+            print(f"Model ready: {model_name}")
         return self._models[model_name]
 
     @modal.method()
@@ -135,6 +172,16 @@ class TTSService:
         Returns audio URL (if upload_to_r2=True) or base64 audio data.
         """
         return self._run_generation(request)
+
+    @modal.fastapi_endpoint(method="GET")
+    def health_check(self):
+        """Health check — confirms the service and pre-loaded models are ready."""
+        return {
+            "status": "healthy",
+            "service": "qwen3-tts-api",
+            "models_loaded": list(self._models.keys()),
+            "device": self.device,
+        }
 
     def _run_generation(self, request: TTSRequest):
         import soundfile as sf
@@ -275,7 +322,6 @@ class TTSService:
                 }
 
         finally:
-            # Always clean up temp files
             for path in [tmp_wav.name, output_path]:
                 if os.path.exists(path):
                     os.remove(path)
@@ -284,7 +330,7 @@ class TTSService:
 @app.function()
 @modal.fastapi_endpoint(method="GET")
 def health():
-    """Health check endpoint"""
+    """Lightweight health check (no model loading)."""
     return {
         "status": "healthy",
         "service": "qwen3-tts-api",
