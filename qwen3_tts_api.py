@@ -366,28 +366,29 @@ def list_voices():
 
 @app.function(
     image=image,
-    gpu="L40S",
-    timeout=3600,               # 1 hour — enough to download all models
+    cpu=4,                      # CPU only — no GPU needed just to download files
+    memory=8192,
+    timeout=3600,
     volumes={MODEL_CACHE_DIR: model_volume},
 )
 def download_models():
     """
-    Pre-download all TTS models into the Modal Volume before deploying.
+    Pre-download all TTS model weights into the Modal Volume.
 
-    Run once with:
+    Uses snapshot_download() — downloads files only, does NOT load them
+    into memory. This is much faster than from_pretrained() which also
+    initialises the model on GPU (slow + expensive).
+
+    Run once before deploying:
         modal run qwen3_tts_api.py::download_models
 
-    After this completes, every container start loads from the volume
+    After this completes every GPU container start reads from the volume
     (seconds) instead of re-downloading from HuggingFace (5-10 min).
     """
-    import torch
-    from qwen_tts import Qwen3TTSModel
+    from huggingface_hub import snapshot_download
 
     os.environ["HF_HOME"] = MODEL_CACHE_DIR
     os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE_DIR
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
     all_models = [
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
@@ -400,18 +401,14 @@ def download_models():
     for model_name in all_models:
         print(f"Downloading {model_name} ...")
         try:
-            model = Qwen3TTSModel.from_pretrained(
-                model_name,
-                device_map=device,
-                dtype=dtype,
+            path = snapshot_download(
+                repo_id=model_name,
                 cache_dir=MODEL_CACHE_DIR,
             )
-            del model        # free GPU memory before next download
-            print(f"  ✓ {model_name}")
+            print(f"  ✓ {model_name} → {path}")
         except Exception as e:
             print(f"  ✗ {model_name} failed: {e}")
 
-    # Commit so the files are visible to future containers
     model_volume.commit()
     print("All models saved to volume. You can now deploy.")
 
